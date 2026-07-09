@@ -1,0 +1,53 @@
+```yaml
+version: '3.8'
+
+services:
+  agent1:
+    image: myagentimage:latest
+    container_name: agent1_container
+    environment:
+      - AGENT_ID=1
+      - AGENT_TYPE=WORKER
+    ports:
+      - "5001:5000"
+    depends_on:
+      - manager
+
+  agent2:
+    image: myagentimage:latest
+    container_name: agent2_container
+    environment:
+      - AGENT_ID=2
+      - AGENT_TYPE=WORKER
+    ports:
+      - "5002:5000"
+    depends_on:
+      - manager
+
+  manager:
+    image: mymanagerimage:latest
+    container_name: manager_container
+    environment:
+      - MANAGER_PORT=8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config
+    depends_on:
+      - agent1
+      - agent2
+
+networks:
+  default:
+    driver: bridge
+```
+
+This `docker-compose.yml` file defines a multi-agent system with three services:
+
+1. **agent1**: A worker agent that listens on port 5000 and is configured with an environment variable `AGENT_ID=1` and `AGENT_TYPE=WORKER`.
+2. **agent2**: Another worker agent similar to `agent1`, but with `AGENT_ID=2`.
+3. **manager**: The manager service that handles the coordination of agents. It listens on port 8080, mounts a local directory (`./config`) into the container at `/app/config`, and depends on both `agent1` and `agent2`.
+
+The services are connected using a default bridge network, ensuring they can communicate with each other.
+
+This configuration is suitable for deploying a multi-agent system where agents perform tasks under the supervision of a manager. Adjustments may be needed based on specific requirements such as scaling, additional services, or different networking configurations.
