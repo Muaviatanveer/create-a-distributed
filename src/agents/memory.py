@@ -1,108 +1,96 @@
-```python
-import json
-from typing import Dict, List, Optional
+import sqlite3
+from typing import List, Tuple
 
-class Memory:
-    def __init__(self, agent_id: str):
-        """
-        Initialize the memory system for a specific agent.
+class MemoryAgent:
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.connection = None
 
-        Args:
-            agent_id (str): Unique identifier for the agent.
-        """
-        self.agent_id = agent_id
-        self.memory_store: Dict[str, List[Dict]] = {}
+    def connect(self) -> None:
+        try:
+            self.connection = sqlite3.connect(self.db_path)
+            print("Database connection established.")
+        except sqlite3.Error as e:
+            print(f"Error connecting to database: {e}")
+            raise
 
-    def add_experience(self, experience: Dict) -> None:
-        """
-        Add an experience to the memory store.
+    def close(self) -> None:
+        if self.connection:
+            self.connection.close()
+            print("Database connection closed.")
 
-        Args:
-            experience (Dict): Experience data to be stored. Should include a 'timestamp' and 'data'.
+    def insert_data(self, table_name: str, data: List[Tuple]) -> None:
         """
-        if 'timestamp' not in experience or 'data' not in experience:
-            raise ValueError("Experience must contain 'timestamp' and 'data' keys.")
+        Insert multiple rows into a specified table using parameterized queries to prevent SQL injection.
+
+        :param table_name: Name of the table to insert data into.
+        :param data: A list of tuples, where each tuple represents a row of data to be inserted.
+        """
+        if not self.connection:
+            raise Exception("Database connection is not established.")
+
+        placeholders = ', '.join(['?' for _ in range(len(data[0]))])
+        columns = ', '.join([f'\"{col}\"' for col in data[0].keys()])
+
+        query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
         
-        timestamp = experience['timestamp']
-        if timestamp not in self.memory_store:
-            self.memory_store[timestamp] = []
-        self.memory_store[timestamp].append(experience)
+        try:
+            cursor = self.connection.cursor()
+            cursor.executemany(query, [tuple(row.values()) for row in data])
+            self.connection.commit()
+            print(f"{len(data)} rows inserted into {table_name}.")
+        except sqlite3.Error as e:
+            print(f"Error inserting data: {e}")
+            raise
 
-    def retrieve_experiences(self, start_time: Optional[str] = None, end_time: Optional[str] = None) -> List[Dict]:
+    def fetch_data(self, table_name: str) -> List[Tuple]:
         """
-        Retrieve experiences within a specified time range.
+        Fetch all rows from a specified table.
 
-        Args:
-            start_time (Optional[str]): Start timestamp for the query.
-            end_time (Optional[str]): End timestamp for the query.
-
-        Returns:
-            List[Dict]: List of experiences retrieved from memory.
+        :param table_name: Name of the table to fetch data from.
+        :return: A list of tuples, where each tuple represents a row of data.
         """
-        if start_time and end_time and start_time > end_time:
-            raise ValueError("Start time must be before or equal to end time.")
+        if not self.connection:
+            raise Exception("Database connection is not established.")
+
+        query = f"SELECT * FROM {table_name}"
         
-        experiences = []
-        for timestamp, experience_list in self.memory_store.items():
-            if (start_time is None or timestamp >= start_time) and (end_time is None or timestamp <= end_time):
-                experiences.extend(experience_list)
-        return experiences
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query)
+            return cursor.fetchall()
+        except sqlite3.Error as e:
+            print(f"Error fetching data: {e}")
+            raise
 
-    def update_experience(self, timestamp: str, new_data: Dict) -> None:
-        """
-        Update an existing experience in the memory store.
+# Example usage
+if __name__ == "__main__":
+    db_path = 'example.db'
+    agent = MemoryAgent(db_path)
+    agent.connect()
 
-        Args:
-            timestamp (str): Timestamp of the experience to be updated.
-            new_data (Dict): New data for the experience.
-        """
-        if timestamp not in self.memory_store:
-            raise KeyError(f"No experiences found with timestamp: {timestamp}")
-        
-        for i, experience in enumerate(self.memory_store[timestamp]):
-            if 'data' in experience and experience['data'] == new_data:
-                self.memory_store[timestamp][i]['data'] = new_data
-                return
-        
-        raise ValueError("No matching experience data found to update.")
+    # Create a table
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE
+    )
+    """
+    cursor = agent.connection.cursor()
+    cursor.execute(create_table_query)
+    agent.connection.commit()
 
-    def delete_experience(self, timestamp: str, data: Dict) -> None:
-        """
-        Delete an existing experience from the memory store.
+    # Insert data using parameterized queries
+    user_data = [
+        {"name": "Alice", "email": "alice@example.com"},
+        {"name": "Bob", "email": "bob@example.com"}
+    ]
+    agent.insert_data("users", [tuple(row.values()) for row in user_data])
 
-        Args:
-            timestamp (str): Timestamp of the experience to be deleted.
-            data (Dict): Data of the experience to be deleted.
-        """
-        if timestamp not in self.memory_store:
-            raise KeyError(f"No experiences found with timestamp: {timestamp}")
-        
-        for i, experience in enumerate(self.memory_store[timestamp]):
-            if 'data' in experience and experience['data'] == data:
-                del self.memory_store[timestamp][i]
-                return
-        
-        raise ValueError("No matching experience data found to delete.")
+    # Fetch and print data
+    users = agent.fetch_data("users")
+    for user in users:
+        print(user)
 
-    def save_to_file(self, file_path: str) -> None:
-        """
-        Save the current state of memory to a JSON file.
-
-        Args:
-            file_path (str): Path where the memory should be saved.
-        """
-        with open(file_path, 'w') as file:
-            json.dump(self.memory_store, file, indent=4)
-
-    def load_from_file(self, file_path: str) -> None:
-        """
-        Load the state of memory from a JSON file.
-
-        Args:
-            file_path (str): Path where the memory is saved.
-        """
-        with open(file_path, 'r') as file:
-            self.memory_store = json.load(file)
-```
-
-This `Memory` class provides a comprehensive system for managing an agent's knowledge and experiences. It includes methods to add, retrieve, update, and delete experiences, as well as save and load the memory state from a JSON file. The implementation ensures that all operations are properly validated and error-handled.
+    agent.close()
